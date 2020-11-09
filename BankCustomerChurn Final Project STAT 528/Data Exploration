@@ -1,0 +1,50 @@
+library(tidyverse)
+install.packages("visdat")
+library(visdat)
+library(RColorBrewer)
+install.packages("ggthemes")
+library(ggthemes)
+library(forcats)
+
+cData = read_csv("cData.csv")
+
+
+# Since Germany had the highest churn rate as per Nick's exploratory data analysis, I thought of making some charts based on the variable geography.
+
+cData%>%
+  ggplot(aes(reorder(AgeBins,EstimatedSalary,FUN = median, na.rm = TRUE),EstimatedSalary)) + geom_boxplot() + facet_wrap(~Geography) +theme(axis.text.x = element_text(angle = 90))
+# This doesn't reveal much about the higher churn rate in Germany since the boxplots of agebins with respect to extimated salary is almost same for all the three countries
+
+cData%>%
+  ggplot(aes(reorder(AgeBins,Balance,FUN = median, na.rm = TRUE),Balance)) + geom_boxplot() + facet_wrap(~Geography) +theme(axis.text.x = element_text(angle = 90))
+# A lot of outliers are present in Germany compared to the other two countries. Not sure if this has an effect in people exting though.
+# Same is the case if we create a boxplot with respect to balance and credit score bins
+cData%>%
+  ggplot(aes(reorder(CreditScoreBins,Balance,FUN = median, na.rm = TRUE),Balance)) + geom_boxplot() + facet_wrap(~Geography) +theme(axis.text.x = element_text(angle = 90))
+
+
+cData %>% ggplot(aes(x = AgeBins, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill") + facet_wrap(~Geography)+
+  theme(axis.text.x = element_text(angle = 90))
+
+cData %>% ggplot(aes(x = Exited, y = Balance)) +
+  geom_jitter()  + facet_wrap(~Geography)
+
+cData %>% ggplot(aes(x = Exited, y = EstimatedSalary)) +
+  geom_jitter()  + facet_wrap(~Geography)
+
+cData %>% ggplot(aes(x = Exited, y = Balance)) +
+  geom_jitter()  + facet_wrap(Gender~Geography)
+
+cData %>% ggplot(aes(x = Exited, y = Balance)) +
+  geom_jitter()  + facet_wrap(HasCrCard~Geography)
+
+# There doesn't seem to be much explanation with respect to the people who exited and their estimated salary
+# However, the spread of "balance" of the people who exited in Germany seems to be less and is hovering around 75000 to 175000
+# And this seems to be true for both the genders.
+# But the number of exited people in Germany seems to be considerably higher for customers with Credit Card than without it comparing to the numbers in the other two countries
+
+cData %>% ggplot(aes(x = IsActiveMember, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill")
+# You are right in saying that "IsActiveMember" doesn't make much sense to me either and there isn't a proper explanation of the purpose of the variable in the dataset description as well
+# I am fine with removing it from further analysis.

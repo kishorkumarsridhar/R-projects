@@ -1,0 +1,124 @@
+library(mlr)
+library(ROSE)
+library(mmpf)
+
+set.seed(55)
+
+#create dummy variables for the categorical variables
+cd.dum.00 = createDummyFeatures(obj = classification_data, target = 'Exited')
+#set the train/test set split to 70/30
+smp_size = floor(.70*nrow(cd.dum.00))
+
+#split the data frame
+train_ind = sample(seq_len(nrow(cd.dum.00)), size = smp_size)
+cd.dum.00.train = cd.dum.00[train_ind,]
+cd.dum.00.test = cd.dum.00[-train_ind,]
+
+#randomly oversample the training set to balance the two classes
+cd.dum.01.train = ovun.sample(Exited~ . , data = cd.dum.00.train, method = "over", p = 0.5, seed = 55)
+
+#create our two tasks: classifying the normal data, and classify the over sampled data
+task.00 = makeClassifTask(data = cd.dum.00.train, target = 'Exited', positive = '1')
+task.01 = makeClassifTask(data = cd.dum.01.train$data, target = 'Exited', positive = '1')
+
+
+#view(listLearners('classif'))
+## J48 DECISION TREE
+#baseline
+#train that algorithm on a task (dataset)
+mod.j48.00 = train(learner = j48.00, task = task.00)
+#predict the response variable in the test set
+pred.j48.00 = predict(object = mod.j48.00, newdata = cd.dum.00.test)
+#confusion matrix
+#I'm specifically looking at tpr - True positive rate (Sensitivity, Recall) and total acc
+calculateROCMeasures(pred = pred.j48.00)
+
+#over sampled baseline
+mod.j48.01 = train(learner = j48.00, task = task.01)
+pred.j48.01 = predict(object = mod.j48.01, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.j48.01)
+
+# GRID SEARCH
+param.j48.2 = makeParamSet(
+  makeDiscreteParam(id = 'M', values = c(10, 20, 40, 60)),
+  makeDiscreteParam(id = 'C', values = c(.01, .03, .05, .07, .09, .2)))
+grid.j48 = makeTuneControlGrid(resolution = 5)
+resample.00 = makeResampleDesc(method = 'CV', iters = 5, stratify = TRUE)
+tuned.params.j48.01 = tuneParams(learner = j48.00, task = task.01, resampling = resample.00, par.set = param.j48.2, control = grid.j48)
+#[Tune] Result: M=10; C=0.03 : mmce.test.mean=0.1539984
+
+hpp.j48.2 = generateHyperParsEffectData(tune.result = tuned.params.j48.01)
+plotHyperParsEffect(hyperpars.effect.data = hpp.j48.2, x = 'M', y = 'C', z = 'mmce.test.mean')
+
+#tuned parameters, oversampled data set
+j48.03 = makeLearner(cl = 'classif.J48', predict.type = 'response', 'M' = 10, 'C' = .2)
+mod.j48.03 = train(learner = j48.03, task = task.01)
+pred.j48.03 = predict(object = mod.j48.03, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.j48.03)
+
+#same thing as .03, but with a probabilistic output for the ROC curve
+j48.05 = makeLearner(cl = 'classif.J48', predict.type = 'prob', 'M' = 10, 'C' = .2)
+mod.j48.05 = train(learner = j48.05, task = task.01)
+pred.j48.05 = predict(object = mod.j48.05, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.j48.05)
+
+
+## RANDOM FOREST
+#baseline - normal data
+rf.00 = makeLearner(cl = 'classif.randomForest', predict.type = 'response')
+
+mod.rf.00 = train(learner = rf.00, task = task.00)
+pred.rf.00 = predict(object = mod.rf.00, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.rf.00)
+
+#baseline - oversampled training set
+mod.rf.01 = train(learner = rf.00, task = task.01)
+pred.rf.01 = predict(object = mod.rf.01, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.rf.01)
+
+#GRID SEARCH - parameter tuning for random forest
+#getParamSet('classif.randomForest')
+#takes forever, and with 3 variables, it can't easily produce a plot
+param.rf = makeParamSet(
+  makeDiscreteParam(id = 'ntree', values = c(30, 100, 200, 300)),
+  makeIntegerParam(id = 'mtry', lower = 2, upper = 8),
+  makeDiscreteParam(id = 'nodesize', values = c(2, 30, 60, 100, 140)))
+grid.rf = makeTuneControlGrid(resolution = 4)
+tuned.params.rf.00 = tuneParams(learner = rf.00, task = task.00, resampling = resample.00, par.set = param.rf, control = grid.rf, measures = list(acc, f1))
+
+#simplified grid search for the hyper pars effect plot
+rf.01 = makeLearner(cl = 'classif.randomForest', predict.type = 'response', 'mtry' = 8)
+param.rf.02 = makeParamSet(
+  makeDiscreteParam(id = 'ntree', values = c(30, 100, 150, 200)),
+  makeDiscreteParam(id = 'nodesize', values = c(2, 20, 30, 40, 60)))
+tuned.params.rf.01 = tuneParams(learner = rf.01, task = task.01, resampling = resample.00, par.set = param.rf.02, control = grid.rf, measures = list(acc, f1))
+
+hpp.rf.00 = generateHyperParsEffectData(tune.result = tuned.params.rf.01)
+plotHyperParsEffect(hyperpars.effect.data = hpp.rf.00, x = 'ntree', y = 'nodesize', z = 'f1.test.mean')
+
+rf.02 = makeLearner(cl = 'classif.randomForest', predict.type = 'response', par.vals = tuned.params.rf.00$x)
+
+
+#over sampled data set, tuned parameters
+mod.rf.03 = train(learner = rf.02, task = task.01)
+pred.rf.03 = predict(object = mod.rf.03, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.rf.03)
+
+#I was concerned that I was over fitting with that node size, I bumpied it up and the tpr increased
+rf.03 = makeLearner(cl = 'classif.randomForest', predict.type = 'response', 'ntree' = 200, 'mtry' = 8, 'nodesize' = 45)
+mod.rf.04 = train(learner = rf.03, task = task.01)
+pred.rf.04 = predict(object = mod.rf.04, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.rf.04)
+
+#prob response for the ROC curve
+rf.04 = makeLearner(cl = 'classif.randomForest', predict.type = 'prob', 'ntree' = 200, 'mtry' = 8, 'nodesize' = 45)
+mod.rf.05 = train(learner = rf.04, task = task.01)
+pred.rf.05 = predict(object = mod.rf.05, newdata = cd.dum.00.test)
+calculateROCMeasures(pred = pred.rf.05)
+
+### ROC Curve
+threshperf.rf.05 = generateThreshVsPerfData(list(randomForest = pred.rf.05, J48 = pred.j48.05), measures = list(fpr, tpr))
+plotROCCurves(obj = threshperf.rf.05, measures = list(fpr, tpr))
+
+rf.fvd = generateFilterValuesData(task.01)
+plotFilterValues(rf.fvd)

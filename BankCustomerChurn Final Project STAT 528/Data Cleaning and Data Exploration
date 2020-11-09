@@ -1,0 +1,201 @@
+library(tidyverse)
+library(visdat)
+library(RColorBrewer)
+library(ggthemes)
+library(forcats)
+
+cData = read_csv("Churn_Modelling.csv")
+
+
+#DATA CLEANING
+
+
+vis_miss(cData)
+
+cData$CustomerId = as.character(cData$CustomerId)
+cData$CreditScore = as.integer(cData$CreditScore)
+cData$CreditScoreBins = cut(x = cData$CreditScore, breaks = c(349, seq(360,850,10)))
+
+
+cData$Geography = as.factor(cData$Geography)
+levels(cData$Geography) #no change
+
+cData$Gender = as.factor(cData$Gender)
+levels(cData$Gender) #no change
+
+cData$Age = as.integer(cData$Age)
+cData$AgeBins = cut(x = cData$Age, breaks = c(17, seq(25,100,5)))
+cData$TenureFactor = factor(as.character(cData$Tenure), levels = c("0","1","2","3","4","5","6","7","8","9","10"), ordered = TRUE)
+cData$Tenure = as.factor(as.character(cData$Tenure))
+cData$NumOfProducts = as.integer(cData$NumOfProducts)
+
+cData$HasCrCard = as.factor(as.character(cData$HasCrCard))
+table(cData$HasCrCard)
+head(cData$HasCrCard)
+levels(cData$HasCrCard) = c("inactive","active")
+head(cData$HasCrCard) #correct
+
+cData$IsActiveMember = as.factor(as.character(cData$IsActiveMember)) #assuming 1 = member, 0 = not
+table(cData$IsActiveMember)
+head(cData$IsActiveMember)
+levels(cData$IsActiveMember) = c("inactive","active")
+head(cData$IsActiveMember) #correct
+
+cData$Exited = as.factor(as.character(cData$Exited))
+table(cData$Exited)
+head(cData$Exited)
+levels(cData$Exited) = c("retained","exited") #0 = retained, 1 = exited
+head(cData$Exited) #correct
+
+cData = cData %>% select(-RowNumber)
+
+
+#DATA EXPLORATION
+
+
+#What's the difference between active and exited?
+cData %>% select(c(Exited, IsActiveMember)) %>% table 
+#hmmmmmm... doesn't make much sense. I'd expect Exited = Inactive
+
+#Any possible family members?
+length(cData$Surname)
+length(unique(cData$Surname))
+length(cData$Surname) - length(unique(cData$Surname)) 
+#7068 duplicates? probably, but not definitive 
+
+cData %>% ggplot(aes(x = Tenure)) +
+  geom_histogram(binwidth = 1, col = "black", fill = "lightblue") +
+  theme_bw()
+#kind of a strange distribution. if all the middle years were equal, I'd expect 10 to be somewhat close to 9
+#what about >10?
+
+#how do age and tenure compare? I'd expect correlation
+cData %>% ggplot(aes(x = Age, y = Tenure)) +
+  geom_point() +
+  geom_jitter()
+#not really
+
+#Frustratingly practicing my bar charts after messing them up on the midterm
+cData %>% ggplot(aes(x = Age, fill = TenureFactor)) +
+  geom_bar() +
+  scale_fill_brewer(name = "Tenure (yrs)", palette = "BrBG")
+
+cData %>% ggplot(aes(x = AgeBins, fill = fct_rev(TenureFactor))) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(name = "Tenure (yrs)", palette = "BrBG") +
+  theme(axis.text.x = element_text(angle = 90))
+#what's with the old age groups?
+table(cData$AgeBins) 
+#only 1 and 2 customers. makes sense
+
+cData %>% ggplot(aes(x = CreditScoreBins, fill = fct_rev(AgeBins))) +
+  geom_bar(position = "stack") +
+  scale_fill_discrete(name = "Age") +
+  theme(axis.text.x = element_text(angle = 90))
+#I don't see much insight in this graph, other than the distribution of credit scores
+
+
+#DATA EXPLORATION w.r.t RESPONSE VARIABLE: EXITED
+
+
+#CREDIT SCORE
+cData  %>% ggplot(aes(x = CreditScoreBins, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill") +
+  theme(axis.text.x = element_text(angle = 90))
+#low credit score maybe implies the bank didn't even accept them, or maybe high fees and the customer didn't want to stay
+
+#GEOGRAPHY
+world = map_data("world") %>% filter(region %in% c("Austria","Belgium","Bulgaria","Croatia","Cyprus",
+                                                                    "Czech Rep.","Denmark","Estonia","Finland","France",
+                                                                    "Germany","Greece","Hungary","Ireland","Italy","Latvia",
+                                                                    "Lithuania","Luxembourg","Malta","Netherlands","Poland",
+                                                                    "Portugal","Romania","Slovakia","Slovenia","Spain",
+                                                                    "Sweden","UK"))
+#I didn't double check the list, besides the UK
+
+world %>% ggplot(aes(x = long, y = lat, fill)) +  
+  geom_path(aes(group = group)) +
+  theme_map()
+
+countryChurnRate = cData %>% select(Geography, Exited) %>% group_by(Geography) %>% mutate(citizens = n()) %>%
+                      group_by(Geography, Exited) %>% mutate(n = n(), churnRate = n/citizens) %>% 
+                      summarise(churnRate = median(churnRate)) %>%
+                      filter(Exited == "exited") 
+
+churn_map = merge(world, countryChurnRate, by.x = "region", by.y = "Geography", all = T)
+
+churn_map %>% arrange(order) %>% 
+  ggplot(aes(x = long, y = lat)) +  
+  geom_polygon(aes(group = group, fill=churnRate)) +
+  scale_fill_continuous(name = "Exit Rate", high = "#132B43", low = "#56B1F7") +
+  geom_path(aes(group = group)) +
+  theme_map()
+
+#GENDER
+cData %>% ggplot(aes(x = Gender, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill")
+
+#AGE
+cData %>% ggplot(aes(x = AgeBins, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill") +
+  theme(axis.text.x = element_text(angle = 90))
+#interesting
+
+#TENURE
+cData %>% ggplot(aes(x = Tenure, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill")
+#not useful
+
+#BALANCE
+cData %>% ggplot(aes(x = Exited, y = Balance)) +
+  geom_jitter() 
+
+cData %>% ggplot(aes(x = Exited, y = Balance)) +
+  geom_boxplot()
+#low balance has a better probability of being retained?
+#maybe we should be looking at box plots for age, tenure, credit score
+
+cData %>% ggplot(aes(x = Exited, y = Age)) +
+  geom_boxplot()
+#there's something there, but we knew that from the bar chart
+cData %>% ggplot(aes(x = Exited, y = CreditScore)) +
+  geom_boxplot()
+#still nothing that indicates it will be usefull for classification
+
+#NUMBER OF PRODUCTS
+cData %>% ggplot(aes(x = NumOfProducts, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill")
+table(cData$NumOfProducts)
+#groups are imbalanced, but still shows a high purity for some num of products
+#based on this, I think it's more logical to treat NumOfProducts as a factor variable
+
+#HAS CREDIT CARD
+cData %>% ggplot(aes(x = HasCrCard, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill")
+#not usefull
+
+#IS ACTIVE MEMBER
+cData %>% ggplot(aes(x = IsActiveMember, fill = fct_rev(Exited))) +
+  geom_bar(position = "fill")
+#this still doesn't make sense to me, I'm inclined to exclude it from the explanatory variables
+
+#ESTIMATED SALARY
+cData %>% ggplot(aes(x = Exited, y = EstimatedSalary)) +
+  geom_jitter() 
+
+cData %>% ggplot(aes(x = Exited, y = EstimatedSalary)) +
+  geom_boxplot()
+#likely not usefull for classification
+
+#SURNAME
+cData %>% group_by(Surname) %>% mutate(sameName = n(), exited_sd = sd(as.numeric(Exited))) %>%
+  group_by(Surname, Exited) %>% mutate(n = n(), churnRate = n/sameName) %>% 
+  summarise(churnRate = median(churnRate), sameName = median(sameName), exited_sd = median(exited_sd)) %>%
+  filter(Exited == "exited" & sameName > 1) %>%
+  #    ggplot(aes(x = Surname, y = exited_sd)) +
+  #      geom_bar(stat = "identity")
+  ggplot(aes(x = churnRate)) +
+  geom_histogram(binwidth = .05)
+#hard to say if it's useful.
+
+classification_data = cData %>% select(-c(Tenure, TenureFactor, CreditScore, CreditScoreBins, HasCrCard, IsActiveMember, EstimatedSalary, CustomerID))

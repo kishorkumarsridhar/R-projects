@@ -1,0 +1,378 @@
+library(tidyverse)
+library(dplyr)
+library(visdat)
+library(RColorBrewer)
+library(ggthemes)
+library(forcats)
+
+cData = read_csv("Churn_Modelling.csv")
+
+
+#DATA CLEANING
+
+
+#vis_miss(cData)
+cData = cData %>% select(-c(RowNumber, CustomerId))
+
+#cData$CustomerIdBins = factor(cut(x = cData$CustomerId, breaks = c(min(cData$CustomerId)-1, seq(min(cData$CustomerId)+100000,max(cData$CustomerId),100000))))
+#cData$CustomerId = as.character(cData$CustomerId)
+cData$Surname = as.factor(cData$Surname)
+cData$CreditScore = as.integer(cData$CreditScore)
+cData$Geography = as.factor(cData$Geography)
+levels(cData$Geography) #no change
+
+cData$Gender = as.factor(cData$Gender)
+levels(cData$Gender) #no change
+
+cData$Age = as.integer(cData$Age)
+cData$Tenure = factor(as.character(cData$Tenure), levels = c("0","1","2","3","4","5","6","7","8","9","10"), ordered = TRUE)
+cData$NumOfProducts = as.factor(cData$NumOfProducts)
+
+cData$HasCrCard = as.factor(as.character(cData$HasCrCard))
+cData$HasCrCard.words = as.factor(as.character(cData$HasCrCard))
+head(cData$HasCrCard.words)
+levels(cData$HasCrCard.words) = c("inactive","active")
+head(cData$HasCrCard.words) #correct
+
+cData$IsActiveMember = as.factor(as.character(cData$IsActiveMember)) #assuming 1 = member, 0 = not
+cData$IsActiveMember.words = as.factor(as.character(cData$IsActiveMember)) #assuming 1 = member, 0 = not
+head(cData$IsActiveMember.words)
+levels(cData$IsActiveMember.words) = c("inactive","active")
+head(cData$IsActiveMember.words) #correct
+
+cData$Exited = as.factor(as.character(cData$Exited))
+cData$Exited.words = as.factor(as.character(cData$Exited))
+head(cData$Exited.words)
+levels(cData$Exited.words) = c("retained","exited") #0 = retained, 1 = exited
+head(cData$Exited.words) #correct
+
+cData$CreditScoreBins = cut(x = cData$CreditScore, breaks = c(349, seq(400,850,50)))
+cData$AgeBins = cut(x = cData$Age, breaks = c(17, seq(25,105,10)))
+cData$EstimatedSalaryBins = cut(x = cData$EstimatedSalary, breaks = c(0, seq(20000,200000,20000)))
+
+classData = cData %>% select(-c(IsActiveMember, Surname, matches("Bins"), matches(".words")))
+
+fwrite(classData, file = "classification_data.csv", quote = TRUE)
+
+
+# CLASSIFICATION
+library(RWeka)
+library(caret)
+library(randomForest)
+library(xgboost)
+library(data.table)
+library(mlr)
+library(ROSE)
+library(Matrix)
+
+set.seed(55) 
+
+#create training and test sets
+smp_size = floor(.70*nrow(classData))
+
+train_ind = sample(seq_len(nrow(classData)), size = smp_size)
+train = classData[train_ind,]
+test = classData[-train_ind,]
+
+#create a decision tree model based on the training data set
+dt1.01 = J48(Exited~ . , data = train)
+#test model on the test data set
+pred1.01 = predict(dt1.01, newdata = test, type = "class")
+#summarise model performance
+confusionMatrix(data = pred1.01, reference = test$Exited, positive = "1")
+#overfit - I'm looking at sensitivity/ classification of positive cases of customer churn
+
+dt1.02 = J48(Exited~ . , 
+              data = train, 
+              control = Weka_control(C = 0.5, M = 2))
+pred1.02 = predict(dt1.02, newdata = test, type = "class")
+confusionMatrix(data = pred1.02, reference = test$Exited, positive = "1")
+#overfit
+
+dt1.03 = J48(Exited~ . , 
+              data = train, 
+              control = Weka_control(C = 0.5, M = 10))
+pred1.03 = predict(dt1.03, newdata = test, type = "class")
+confusionMatrix(data = pred1.03, reference = test$Exited, positive = "1")
+
+dt1.04 = J48(Exited~ . , 
+              data = train, 
+              control = Weka_control(C = 0.5, M = 40))
+pred1.04 = predict(dt1.04, newdata = test, type = "class")
+confusionMatrix(data = pred1.04, reference = test$Exited, positive = "1")
+#better, larger min node size
+
+rf2.01 = randomForest(x = train %>% select(-c(Exited)), 
+                      y = train$Exited, data = train, 
+                      xtest = test %>% select(-c( Exited)), 
+                      ytest = test$Exited, 
+                      ntrees = 500)
+print(rf2.01)
+#overfit
+
+rf2.02 = randomForest(x = train %>% select(-c(Exited)), 
+                      y = train$Exited, data = train, 
+                      xtest = test %>% select(-c(Exited)), 
+                      ytest = test$Exited, 
+                      ntrees = 500, mtry = 7)
+print(rf2.02)
+#looks like it's overfitting initially as well
+
+rf2.04 = randomForest(x = train %>% select(-c(Exited)), 
+                      y = train$Exited, 
+                      data = train, 
+                      xtest = test %>% select(-c(Exited)), 
+                      ytest = test$Exited, 
+                      ntrees = 50000, mtry = 7, nodesize = 10)
+print(rf2.04)
+#worse than the J48/C4.5 decision tree
+
+rf2.05 = randomForest(x = train %>% select(-c(Exited)), 
+                      y = train$Exited, 
+                      data = train, 
+                      xtest = test %>% select(-c(Exited)), 
+                      ytest = test$Exited, 
+                      ntrees = 50000, mtry = 7, nodesize = 100)
+print(rf2.05)
+#why is this doing worse?
+
+#XGBoost
+classData.xgb = classData
+classData.xgb$Exited = as.integer(classData.xgb$Exited)
+classData.xgb$Exited = classData.xgb$Exited-1
+classData.xgb$Tenure = as.numeric(classData.xgb$Tenure)
+
+train.xgb_ind = sample(seq_len(nrow(classData.xgb)), size = smp_size)
+train.xgb.1 = setDT(classData.xgb[train.xgb_ind,])
+test.xgb.1 = setDT(classData.xgb[-train.xgb_ind,])
+
+train.xgb.labels = train.xgb.1$Exited
+test.xgb.labels = test.xgb.1$Exited
+
+train.xgb.2 = model.matrix(~.+0, data = train.xgb.1[,-c("Exited"),with=FALSE])
+test.xgb.2 = model.matrix(~.+0, data = test.xgb.1[,-c("Exited"),with=FALSE])
+
+train.xgb.3 = xgb.DMatrix(data = train.xgb.2, label = train.xgb.labels)
+test.xgb.3 = xgb.DMatrix(data = test.xgb.2, label = test.xgb.labels)
+
+params = list(booster = "gbtree", objective = "binary:logistic", eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+xgb3.00 = xgb.cv(params = params, 
+                  data = train.xgb.3, 
+                  nrounds = 500, 
+                  nfold = 5, 
+                  showsd = T, stratified = T, print_every_n = 5, early_stop_round = 20, maximize = F)
+#lowest test error around 25 rounds... that's not fun. More rounds are probably over fitting. 
+
+xgb3.01 <- xgb.train (params = params, 
+                      data = train.xgb.3, 
+                      nrounds = 100, 
+                      watchlist = list(val=test.xgb.3,train=train.xgb.3), 
+                      print_every_n = 10, early_stop_round = 10, maximize = FALSE, eval_metric = "error")
+
+xgb.pred3.01 = predict(xgb3.01, test.xgb.3)
+xgb.pred3.01 = ifelse(xgb.pred3.01 > 0.5,1,0)
+confusionMatrix(as.factor(xgb.pred3.01), as.factor(test.xgb.labels))
+
+mat = xgb.importance(feature_names = colnames(train.xgb.2),model = xgb3.01)
+xgb.plot.importance (importance_matrix = mat[1:20]) 
+
+#Any input on how to select parameters for an xgboost model? at face value, it's worse than the decision tree, which shouldn't be the case
+
+ 
+
+## OVERSAMPLING TO ELIMINATE CLASS IMBALANCE IN THE TRAINING SET
+
+train.os = ovun.sample(Exited~ . , data = train, method = "over", p = 0.5, seed = 55)
+train.os = setDT(train.os$data)
+dt5.03 = J48(Exited~ . , 
+             data = train.os, 
+             control = Weka_control(C = 0.5, M = 10))
+pred5.03 = predict(dt5.03, newdata = test, type = "class")
+confusionMatrix(data = pred5.03, reference = test$Exited, positive = "1")
+#essentially starts over predicting customer churn. which might not be a bad thing. specificity is way up
+
+dt5.04 = J48(Exited~ . , 
+             data = train.os, 
+             control = Weka_control(C = 0.5, M = 40))
+pred5.04 = predict(dt5.04, newdata = test, type = "class")
+confusionMatrix(data = pred5.04, reference = test$Exited, positive = "1")
+#same as 5.03
+
+rf6.04 = randomForest(x = train.os %>% select(-c(Exited)), 
+                      y = train.os$Exited, 
+                      data = train.os, 
+                      xtest = test %>% select(-c(Exited)), 
+                      ytest = test$Exited, 
+                      ntrees = 500, mtry = 7, nodesize = 10)
+print(rf6.04)
+#worse than the J48/C4.5 decision tree
+
+rf2.05 = randomForest(x = train.os %>% select(-c(Exited)), 
+                      y = train.os$Exited, 
+                      data = train.os, 
+                      xtest = test %>% select(-c(Exited)), 
+                      ytest = test$Exited, 
+                      ntrees = 500, mtry = 7, nodesize = 100)
+print(rf2.05)
+#ultimately, comparable to J48/c4.5
+
+
+train.xgb.1.os = ovun.sample(Exited~ . , data = train.xgb.1, method = "over", p = 0.5, seed = 55)
+train.xgb.1.os = setDT(train.xgb.1.os$data)
+table(train.xgb.1.os$Exited) #cool
+
+train.xgb.labels = train.xgb.1.os$Exited
+test.xgb.labels = test.xgb.1$Exited
+
+train.xgb.2 = model.matrix(~.+0, data = train.xgb.1.os[,-c("Exited"),with=FALSE])
+test.xgb.2 = model.matrix(~.+0, data = test.xgb.1[,-c("Exited"),with=FALSE])
+
+train.xgb.3 = xgb.DMatrix(data = train.xgb.2, label = train.xgb.labels)
+test.xgb.3 = xgb.DMatrix(data = test.xgb.2, label = test.xgb.labels)
+
+
+params = list(booster = "gbtree", 
+              objective = "binary:logistic", 
+              eta=0.3, gamma=0, 
+              max_depth=6, 
+              min_child_weight=1, 
+              subsample=1, 
+              colsample_bytree=1) #same as before
+xgb4.01 = xgb.train(params = params, 
+                    data = train.xgb.3, 
+                    nrounds = 100, 
+                    watchlist = list(val=test.xgb.3,train=train.xgb.3), 
+                    print_every_n = 10, early_stop_round = 10, maximize = F , eval_metric = "error")
+xgb.pred4.01 = predict(xgb4.01, test.xgb.3)
+xgb.pred4.01 = ifelse(xgb.pred4.01 > 0.5,1,0)
+confusionMatrix(as.factor(xgb.pred4.01), as.factor(test.xgb.labels))
+#a lot better for positive classes! specificity is up, overall accuracy is down, but for the business c
+
+mat = xgb.importance(feature_names = colnames(train.xgb.2),model = xgb4.01)
+xgb.plot.importance(importance_matrix = mat[1:20]) 
+
+params <- list(booster = "gbtree", 
+               objective = "binary:logistic", 
+               eta=0.3, 
+               gamma=0, 
+               max_depth=8, 
+               min_child_weight=1, 
+               subsample=1, 
+               colsample_bytree=1)
+xgb4.02 = xgb.train(params = params, 
+                    data = train.xgb.3, nrounds = 200, 
+                    watchlist = list(val=test.xgb.3,train=train.xgb.3), 
+                    print_every_n = 10, early_stop_round = 10, maximize = F , eval_metric = "error")
+
+xgb.pred4.02 = predict(xgb4.02, test.xgb.3)
+xgb.pred4.02 = ifelse(xgb.pred4.02 > 0.5,1,0)
+confusionMatrix(as.factor(xgb.pred4.02), as.factor(test.xgb.labels))
+#worse than 4.01 for specificity, better for overall accuracy
+
+mat = xgb.importance(feature_names = colnames(train.xgb.2),model = xgb4.02)
+xgb.plot.importance(importance_matrix = mat[1:20]) 
+
+params <- list(booster = "gbtree", 
+               objective = "binary:logistic", 
+               eta=0.2, 
+               gamma=0, 
+               max_depth=6, 
+               min_child_weight=1, 
+               subsample=1, 
+               colsample_bytree=.8)
+xgb4.03 = xgb.train(params = params, 
+                    data = train.xgb.3, 
+                    nrounds = 200, 
+                    watchlist = list(val=test.xgb.3,train=train.xgb.3), 
+                    print_every_n = 10, early_stop_round = 10, maximize = F , eval_metric = "error")
+
+xgb.pred4.03 = predict(xgb4.03, test.xgb.3)
+xgb.pred4.03 = ifelse(xgb.pred4.03 > 0.5,1,0)
+confusionMatrix(as.factor(xgb.pred4.03), as.factor(test.xgb.labels))
+#pretty similar to 4.01
+
+mat = xgb.importance(feature_names = colnames(train.xgb.2),model = xgb4.03)
+xgb.plot.importance(importance_matrix = mat[1:20]) 
+
+########
+
+#grid search, sort of just for fun
+dtrain = train.xgb.3
+dtest = test.xgb.3
+gc()
+
+searchGridSubCol = expand.grid(subsample = c(.5, .6, .8), 
+                                colsample_bytree = c(.5, .7, .9),
+                                max_depth = c(5, 6, 7, 8),
+                                min_child = seq(1, 10, 40), 
+                                eta = c(.1, .2, .3)
+)
+
+ntrees = 100
+
+system.time(
+  rmseErrorsHyperparameters <- apply(searchGridSubCol, 1, function(parameterList){
+    
+    #Extract Parameters to test
+    currentSubsampleRate <- parameterList[["subsample"]]
+    currentColsampleRate <- parameterList[["colsample_bytree"]]
+    currentDepth <- parameterList[["max_depth"]]
+    currentEta <- parameterList[["eta"]]
+    currentMinChild <- parameterList[["min_child"]]
+    xgboostModelCV <- xgb.cv(data =  dtrain, nrounds = ntrees, nfold = 5, showsd = TRUE, 
+                             metrics = "rmse", verbose = TRUE, "eval_metric" = "rmse",
+                             "objective" = "reg:linear", "max.depth" = currentDepth, "eta" = currentEta,                               
+                             "subsample" = currentSubsampleRate, "colsample_bytree" = currentColsampleRate
+                             , print_every_n = 50, "min_child_weight" = currentMinChild, booster = "gbtree",
+                             early_stopping_rounds = 10)
+    
+    xvalidationScores <- as.data.frame(xgboostModelCV$evaluation_log)
+    rmse <- tail(xvalidationScores$test_rmse_mean, 1)
+    trmse <- tail(xvalidationScores$train_rmse_mean,1)
+    output <- return(c(rmse, trmse, currentSubsampleRate, currentColsampleRate, currentDepth, currentEta, currentMinChild))}))
+
+output <- as.data.frame(t(rmseErrorsHyperparameters))
+varnames <- c("TestRMSE", "TrainRMSE", "SubSampRate", "ColSampRate", "Depth", "eta", "currentMinChild")
+names(output) <- varnames
+head(output)
+
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.3, gamma=0, max_depth=10, min_child_weight=.8, subsample=.8, colsample_bytree=.8)
+xgb3.6 = xgb.train(params = params, data = train.xgb.3, nrounds = 100, watchlist = list(val=test.xgb.3,train=train.xgb.3), print_every_n = 10, early_stop_round = 10, maximize = F , eval_metric = "error")
+xgb.pred3.6 = predict(xgb3.6, test.xgb.3)
+xgb.pred3.6 = ifelse(xgb.pred3.5 > 0.5,1,0)
+confusionMatrix(as.factor(xgb.pred3.6), as.factor(test.xgb.labels), positive = "1")
+
+mat = xgb.importance(feature_names = colnames(train.xgb.2),model = xgb3.5)
+xgb.plot.importance(importance_matrix = mat[1:20]) 
+
+
+xgbcv <- xgb.cv( params = params, data = train.xgb.3, nrounds = 2000, nfold = 5, showsd = T, stratified = T, print_every_n = 20, early_stop_round = 5, maximize = F)
+xgbcv.eval = xgbcv$evaluation_log
+xgbcv.eval[which(xgbcv.eval$test_error_mean == min(xgbcv.eval$test_error_mean)),]
+# iteration 23...
+
+
+#adding IsActiveMember back in
+
+classData2 = cData %>% select(-c(Surname, matches("Bins"), matches(".words")))
+
+smp_size2 = floor(.70*nrow(classData2))
+
+train_ind2 = sample(seq_len(nrow(classData2)), size = smp_size2)
+train2 = classData2[train_ind2,]
+test2 = classData2[-train_ind2,]
+
+train.os2 = ovun.sample(Exited~ . , data = train2, method = "over", p = 0.5, seed = 55)
+train.os2 = setDT(train.os2$data)
+dt7.03 = J48(Exited~ . , 
+             data = train.os2, 
+             control = Weka_control(C = 0.5, M = 10))
+pred7.03 = predict(dt7.03, newdata = test2, type = "class")
+confusionMatrix(data = pred7.03, reference = test2$Exited, positive = "1")
+
+dt7.04 = J48(Exited~ . , 
+             data = train.os2, 
+             control = Weka_control(C = 0.5, M = 40))
+pred7.04 = predict(dt7.04, newdata = test2, type = "class")
+confusionMatrix(data = pred7.04, reference = test2$Exited, positive = "1")
+# not much different for decision tree, but we should ultimately see how the other methods go
