@@ -1,0 +1,145 @@
+---
+title: "Midterm - Stat 528 - Fall 2019"
+author: "Kishor Kumar Sridhar"
+date: "11/4/19 -- 11/10/19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Behavioral Risk Factor Surveillance System
+
+The [Behavioral Risk Factor Surveillance System](https://www.cdc.gov/brfss/about/index.htm) (BRFSS) is an annual survey conducted by the Center for Disease Control (CDC) to assess behavioral health risk and chronic diseases. The center surveys among others six individual-level behavioral health risk factors associated with the leading causes of premature mortality and morbidity among adults: 1) cigarette smoking, 2) alcohol use, 3) physical activity, 4) diet, 5) hypertension, and 6) safety belt use. 
+Here we are focusing on some of these aspects for a subset of the data concentrating on records for 2018 of the West North Central Division - the fancy name for the Western side of the Midwest, consisting of Iowa, Kansas, Minnesota, Missouri, Nebraska, Nort Dakota, and South Dakota. A file with the data is part of the folder you downloaded. 
+
+Run the code below to read in the data and get ready for answering the questions:
+
+
+The following code reads the data into your R session:
+```{r, message=FALSE, warning = FALSE}
+wncd <- read.csv("brfss-WNCD-2018.csv", stringsAsFactors = FALSE)
+library(tidyverse)
+```
+
+A [codebook](codebook.pdf) describing the survey and a listing of all variables is included in the folder provided to you. You should not be needing the codebook unless explicitly specified in the question.
+
+For each of the questions, show the code necessary to get to the answer. 
+Make sure to also write the answer to the question in a sentence.
+
+
+0. Include your name in the YAML at the top of this file. Include your responses to the questions (code and comments) in this file and submit in Canvas. 
+
+1.  (12 points) Each row of the `wncd` data set corresponds to an interview. How many interviews were conducted in total? The variable `IYEAR` is the year an interview was conducted. How many interviews were conducted in 2019? 
+
+```{r}
+
+nrow(wncd)
+# There were 70546 interviews conducted 
+wncd%>%
+  filter(IYEAR == 2019)%>%
+  group_by(IYEAR)%>%
+  summarise(n = n())
+
+# There were 1844 interviews conducted in the year 2019.
+
+```
+
+2. (30 points) The variable `EDUCA` shows a respondent's highest educational degree answering the question "What is the highest grade or year of school you completed?". The variable `EDUCA` is coded as shown in the table below. Frequency and percentages are given for the whole nation, not just the Western part of the Midwest, i.e. do not be worried if the numbers don't match.
+
+![](education-table.png)
+
+Give a frequency breakdown of `EDUCA`. Change all `9`s to NA.  
+Change the labels of `EDUCA` to "Kindergarten", "Elementary", "Some high school", "High school", "Some college", "College".
+
+Draw a barchart of educational levels, use gender (`SEX1` coded as 1 for male, 2 for female) as a fill color. Modify the plot such that all bars are the same height and the fill color shows percentages. Facet by state (`state`). Comment on the relationship between state, educational levels and gender in two to three sentences. 
+
+```{r}
+
+table(wncd$EDUCA)
+wncd$EDUCA[wncd$EDUCA == 9] <- NA
+table(wncd$EDUCA)
+
+wncd$EDUCA <- factor(wncd$EDUCA, labels = c("Kindergarten", "Elementary", "Some high school", "High school", "Some college", "College"))
+
+table(wncd$EDUCA)
+
+wncd%>%
+  ggplot(aes(wncd$EDUCA, fill = factor(wncd$SEX1))) + geom_bar(position = "fill") + facet_wrap(~wncd$state)
+
+# From the graph, we can see that in Iowa, the education level of both men and women are almost the same. But in in other states, the education level fluctuates. In Nebraska and South Dakota though, the number of people who went to some college and college seem to be way more than the ones that attended kindergarden. 
+
+```
+
+
+3. (35 points) The variable `SLEPTIM1` records how many hours respondents sleep on average in a 24h period. The values 77 and 99 indicate answers of `don't know` and `refuse to answer`, respectively. Exclude these values from your analysis. 
+
+    a) For each state (`state`), calculate the average and standard deviation of `SLEPTIM1` for men and women (`SEX1`). Make sure to keep track of how many values each average is based on. 
+
+```{r}
+
+wncd1 <- wncd%>%
+  filter(!SLEPTIM1 %in% c(77,99))
+
+wncd1%>%
+  filter(SEX1 == 1)%>%
+  group_by(state)%>%
+  summarise(no_of_males = n(), avg_sleep_male = mean(SLEPTIM1), std_sleep_male = sd(SLEPTIM1))
+
+wncd1%>%
+  filter(SEX1 == 2)%>%
+  group_by(state)%>%
+  summarise(no_of_females = n(), avg_sleep_female = mean(SLEPTIM1), std_sleep_female = sd(SLEPTIM1))
+
+```
+
+    b) Filter out any responses that are based on fewer than 1% of that states responses. 
+
+```{r}
+#wncd%>%
+#  filter(nrow() < )
+```
+    
+    c) Plot the relationship for average sleep times by state and gender. Order states by overall average sleep time. Summarise the results in at least three sentences.
+
+```{r}
+
+
+# My code is commented in the below line 
+# wncd%>%ggplot(aes(reorder(state, SLEPTIM1, FUN = mean)), SLEPTIM1) + geom_boxplot() + facet_wrap(~SEX1)
+
+# I am not sure how to reorder this by mean
+
+```
+
+
+4. (23 points) `FLUSHOT6` is a variable asking respondents about whether they are current on their flu vaccine. Values of `1` indicate that the respondent has had a flu shot (or nasal spray) within the last 12 months. 
+
+    a. Calculate the percentage of respondents in each state that has a current flu vaccine. Save the result in a dataset called `flushot`.
+
+```{r}
+
+wncd2 <- wncd%>%
+  group_by(state)%>%
+  mutate(no_of_resp = n())
+
+flushot <- wncd2%>%
+  filter(FLUSHOT6 == 1)%>%
+  group_by(state)%>%
+  summarise(num_curr_flu = n(), curr_flu_perct = sum(FLUSHOT6)/mean(no_of_resp))
+
+```    
+    
+    b. Merge the map data and the `flushot` data such that all states are included in the merged data. Draw a choropleth map of the percentage of flu shots in each state. Comment on the plot. If something went wrong describe the problem.
+
+```{r}
+
+merged_data <- merge(states, flushot, by.x = "region", by.y = "state")
+
+merged_data%>%arrange(order)%>%
+  ggplot(aes(long,lat,group = group)) + geom_polygon(aes(fill = curr_flu_perct)) + geom_path(aes(x = long, y = lat, group=group))
+
+
+# There seems to be a higher percent of flu shots fiven in the state on the top left. I am not familiar with the US states location. Sorry about that. And Iowa is somewhere in the middle with around approx. 0.43. 
+```

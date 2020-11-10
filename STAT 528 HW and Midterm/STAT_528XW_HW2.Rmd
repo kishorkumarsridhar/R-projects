@@ -1,0 +1,163 @@
+---
+title: "STAT_528XW_HW2"
+author: "Kishor Kumar Sridhar"
+date: "October 17, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+For this exercise we will use the data set `ChickWeight`. You need to load the data in R using `data(ChickWeight)`.
+The `ChickWeight` data frame has 578 rows and 4 columns from an experiment on the effect of diet on early growth of chicks. Use `?ChickWeight` to get more information on every one of the variables.
+
+##### Question a: Each chick should have twelve weight measurements. Use the `dplyr` package to identify how many chicks have a complete set of weight measurements and how many measurements there are in the incomplete cases. Extract a subset of the data for all chicks with complete information and name the data set `complete`. (Hint: you might want to use `mutate` to introduce a helper variable consisting of the number of observations) 
+
+
+```{r quesa}
+if(!require(ggplot2)) install.packages("ggplot2",repos = "http://cran.us.r-project.org")
+library(ggplot2)
+if(!require(dplyr)) install.packages("dplyr",repos = "http://cran.us.r-project.org")
+library(dplyr)
+
+ques_a <- ChickWeight%>%
+  group_by(Chick)%>%
+  summarise(count_chicken = n())
+
+ques_a1 <- ques_a%>%filter(count_chicken == 12)
+
+chick_12 <- ques_a1$Chick
+
+complete <- ChickWeight%>%
+  filter(Chick %in% chick_12)
+
+print(paste0("The number of measurements in the complete dataset. i.e. 12 measurements for each chick is ",nrow(complete)))
+
+print(paste0("The number of measurements in the incomplete cases. i.e. not 12 measurements for each chick is ", nrow(ChickWeight) - nrow(complete)))
+
+
+
+```
+
+##### b. In the complete data set introduce a new variable that measures the current weight difference compared to day 0. Name this variable `weightgain`.
+
+```{r quesb}
+
+a3 <- data.frame()
+for (i in unique(complete$Chick)){
+  a1 <- complete%>%
+    filter(Chick == i)
+  b <- a1$weight[1]
+  
+  a2 <- a1%>%
+    mutate(weightgain = a1$weight - b)
+  a3 <- rbind(a3,a2)
+  
+}
+
+complete <- a3
+complete%>%head(20)
+```
+
+From the above first 20 rows of the data from the "complete" dataset, we can see the weightgain for the chicks over different times. Similarly, the entire dataset has the weightgain column that shows how much the chick gained weight over different time periods.
+
+##### c.  Using the `ggplot2` package create  side-by-side boxplots of `weightgain` by `Diet` for day 21. Describe the relationship in 2-3 sentences. Change the order of the categories in the `Diet` variable such that the boxplots are ordered by median `weightgain`.
+
+```{r quesc1}
+
+ques_c <- complete %>%
+  filter(Time == 21)
+
+ggplot(ques_c, aes(Diet, weightgain)) + geom_boxplot()
+
+
+```
+
+From the above boxplot it is visible that the median weight gain of Diet 3 is the maximum. The median line of the Diet 3 seems to be a little nearer to the 3rd quantile denoting that the median value is pulled a little higher because of the larger number of values with a high weightgain. However there seems to be no outliers in the plot and the interquartile range of the Diet 2 and Diet 3 seems to be relatively larger than the Diet 1 and Diet 4.
+
+```{r quesc2}
+
+ggplot(ques_c,aes(reorder(Diet,weightgain,median,rm.na=TRUE),weightgain)) + geom_boxplot() + xlab("Diet")
+
+```
+
+The above plot makes it easier to compare the median weight gains of the 4 diets by arranging them in the increasing order of their medians.
+
+##### d. Using the `ggplot2` package create a  plot with `Time` along the x axis and `weight` in the y axis. Facet by `Diet`. Use a point layer and also draw one line for each `Chick`. Color by `Diet`.  Include the legend on the bottom (check `theme`).Comment on something interesting about these data in  2-3 sentences. 
+
+```{r quesd}
+
+ggplot(complete, aes(Time,weight, color = Diet)) + geom_point() + geom_line(aes(group = Chick)) + facet_wrap(vars(Diet)) +
+  theme(legend.position = "bottom")
+
+```
+
+From the above graph, we can see that Diet 3 performs pretty well when compared with the other Diets in the sense that there are more than 3 chicks with weights above 300 which is not the case in the other 3 Diets wherein there are only one or two chicks with weights above 300. However, Diet 4 shows a steep initial increase but for some reason saturates aroung the week 12 and doesn't increase as steep as it did before the week 12 except for a few chicks. In Diet 2, one chick seems to have lost weight in the initial days and never recovered after that. Poor thing! And one chick in Diet 2 has shown a very consistet increase in weight. Not sure what happened to that chick though!
+
+##### e. Select the  `Chick` with the maximum weight at `Time` 21 for each of the diets. Redraw the previous plot with only these 4 chicks (and don't facet). Compute average daily weights under each Diet and redraw the plot (using the same structure and aesthetics as before).Comment on the results and compare all the visualizations. In your opinion which visualization presented in exercise 1 best describe this data set?
+
+```{r quese1}
+e3 <- data.frame()
+
+for (i in unique(complete$Diet)){
+  e1 <- complete%>%
+    filter(Diet == i)
+  e2 <- e1%>%
+    filter(Time == 21)
+  e3 <- rbind(e3,e2)
+}
+
+e5 <- data.frame()
+
+for (i in unique(e3$Diet)){
+  e4 <- e3 %>%
+    filter(Diet == i)%>%
+    arrange(desc(weightgain))
+  max_weight <- e4%>%head(1)
+  e5 <- rbind(e5,max_weight)
+}
+
+e5
+
+
+```
+
+From the above results, we have found the 4 chicks with the maximum weight at `Time` 21 for each of the diets. We below will now filter the original dataset with just these 4 chicks.
+
+```{r quese2}
+
+chick_id <- complete%>%
+  filter(Chick %in% c(7,21,35,48))
+
+ggplot(chick_id, aes(Time,weight, color = Diet)) + geom_point() + geom_line(aes(group = Chick)) +
+theme(legend.position = "bottom")
+
+```
+
+By plotting the Time and Weight in the above graph, we find that in the Diet 2 there was a relatively sharp gain in the weight initially but then eventualy it died down after somewhere aroud the 12th week letting the Diet 3 take over from after around 13th week. As per this graph, Diet 3 seems to be giving the maximum weight gain among the 4 diets. However, we can investigate further using the following graph.
+
+```{r quese3}
+
+chick_average <- complete%>%
+  group_by(Time,Diet)%>%
+  summarise(daily_average_weight = mean(weight))
+
+ggplot(chick_average, aes(Time,daily_average_weight, color = Diet)) + geom_point() + geom_line(aes(group = Diet)) +
+  theme(legend.position = "bottom")
+
+```
+
+Plotting the Time vs daily average weight of the chicks, says a different story. The Diet 4 seems to be performing very well initially with respect to the average weight gain. But around the 13th week Diet 3 takes over. Comparing the previous graph with this graph with respect to the Diet 2 and Diet 4, we can see that on week 21, although the weight of the chicks with Diet 4 was lesses than the Diet 2, the daily average weight of the Diet 4 is greater than Diet 2.
+
+
+#####  2. Create an R function that fits a simple linear regression and plots residuals vs fitted values using `ggplot2` and includes a horizontal line in zero. The arguments for this function should be `x` (explanatory variable), `y` (response variable) and `col` for the horizontal line color. The x label should be Fitted Value and the y label should be Residuals. <br> Show  how your function works with `data(LifeCycleSavings)`, use `x = sr` `y = ddpi` and `col = red`.
+
+```{r ques2a}
+
+ggplot(LifeCycleSavings, aes(sr,ddpi)) + geom_point() + geom_smooth(method=lm, color="red")
+
+
+```
+
+I understand from the announcement that Question 2 has been marked as "Extra Credit", however I got to the point of fitting a linear model to the data points.

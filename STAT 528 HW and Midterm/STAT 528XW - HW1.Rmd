@@ -1,0 +1,175 @@
+---
+title: "STAT 528XW - HW1"
+author: "Kishor Kumar Sridhar"
+date: "October 3, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Question 1: List five functions that you could use to get more information about the mpg dataset.
+
+The five functions that can be used to learn more about the mpg dataset is as follows:
+
+1. summary(mpg) - Gives the summary statistics of all the columns in the dataset. <br />
+2. head(mpg) - Shows the first 5 rows with all the columns. <br />
+3. dim(mpg) - Gives the dimensions i.e. the number of rows and columns present in the dataset. In the case of mpg dataset, the number of rows are 234 and number of columns are 11. <br />
+4. glimpse(mpg) - As the name suggests, this command shows a glimplse of the dataset showing the number of rows and columns present and the datatype of each column with the first few values in it.<br />
+5. str(mpg) - The str stands for structure and is used to get to know more information about any variable, a column in a dataframe etc. In this case of str(mpg) though, this command essentially shows a similar information to the command glipse.<br />
+
+The outputs of these five functions are given below
+
+
+```{r functions}
+if(!require(ggplot2)) install.packages("ggplot2",repos = "http://cran.us.r-project.org")
+library(ggplot2)
+if(!require(dplyr)) install.packages("dplyr",repos = "http://cran.us.r-project.org")
+library(dplyr)
+
+summary(mpg)
+head(mpg)
+dim(mpg)
+glimpse(mpg)
+str(mpg)
+```
+
+
+#### Question 2: Using the ggplot2 package create a scatterplot of hwy and cty and describe the relationship. Why are there so few points visible? Use a geom that makes all points visible in the scatterplot.
+
+The following code segment is used to create a scatterplot of hwy and cty.
+
+```{r scatplot}
+
+ggplot(data = mpg, aes(x=hwy, y=cty)) + geom_point()
+
+```
+
+By looking at the above scatterplot, it is clear that hwy and cty have a linear relationship. i.e. as hwy (highway miles per gallon) increases, cty (city miles per gallon) also increases. However, the plot shows that there is an overlap of datapoints. This is because many of the instances have the same inputs for hwy and cty. In order to make all points visible in the scatterplot plot, we can add a jitter to it by replacing geom_point() with geom_jitter(). <br />
+The scatter plot with geom_jitter() is shown below
+
+```{r scatterplot}
+
+ggplot(data = mpg, aes(x=hwy, y=cty)) + geom_jitter()
+
+```
+
+In the above scatterplot, all the points are now visible.
+
+#### Question 3: Apart from the US, most countries use fuel consumption (fuel consumed over fixed distance) rather than fuel economy (distance traveled with fixed amount of fuel). How could you convert cty and hwy into the European standard of liter/100 km? Modify the mpg data frame by adding 2 new columns labeled euro_cty and euro_hwy with the European standard values of cty and hwy respectively.
+
+Currently in the mpg dataset, the cty and hwy are city miles travelled per gallon and highway miles travelled per gallon respectively. We know that, 1 gallon = 3.78541 litres and 1 mile = 1.60934 Kms. Now, for example, in order to convert cty into European standard of liter/100 km, we would have to do the calculation shown in the below function "conversion" for all the values in the column cty. Similarly we would have to do the same calculation to the values in the hwy column as well. <br />
+
+We, first introduce a function "conversion" to do this calculation as shown below
+
+```{r fnc}
+
+conversion <- function(x){
+  y = 1/x*3.7854*62.132
+  return(y)
+}
+
+```
+
+Then we apply this function to all the values in the columns cty and hwy to form two new columns of euro_cty and euro_hwy as shown below.
+
+```{r mut}
+
+mpg <- mpg%>%
+  mutate(euro_cty = conversion(cty), euro_hwy=conversion(hwy))
+
+glimpse(mpg)
+```
+
+
+#### Question 4: Which model is the most economic based on cty? Which model consumes most fuel using the European standard for cty?
+
+In order to answer the first question, "Which model is the most economic based on cty?", we can calculate the mean and median of cty for all the vehicles for each model as below:
+
+```{r eco}
+
+mpg2 <- mpg%>%
+  mutate(mean_cty = mean(cty))%>%
+  group_by(model)%>%
+  summarise(mean_cty = mean(cty), median_cty = median(cty))%>%
+  arrange(desc(mean_cty))
+mpg2
+```
+
+Based on the above table, we can see that the model "Corolla" has the maximum average city miles travelled per gallon and maximum median city miles travelled per gallon. Hence, we can say that the model Corolla is the most economic of all the models.
+
+
+For the first question, "Which model consumes most fuel using the European standard for cty?", we can calculate the mean and median of euro_cty for all the vehicles for each model as below:
+
+```{r fuel}
+
+mpg3 <- mpg%>%
+  mutate(mean_cty = mean(cty))%>%
+  group_by(model)%>%
+  summarise(mean_Eurocty = mean(euro_cty), median_Eurocty = median(euro_cty))%>%
+  arrange(desc(mean_Eurocty))
+mpg3
+```
+
+Based on the above table, we can see that the model "ram 1500 pickup 4wd" has the maximum average liters of fuel consumed per 100 Kms and maximum median liters of fuel consumed per 100 Kms. Hence, we can say that the model ram 1500 pickup 4wd consumes most fuel using the European standard compared to all other models. Although, it is debatable since the models "expedition 2wd" and "navigator 2wd" have a higher median of fuel consumption. So, should we consider Median as the metric, we would have to go with "expedition 2wd" and "navigator 2wd" as the models that consume most fuel using the European standard compared to all other models.
+
+#### Question 5: We want to know if cty and hwy have improved from 1999 to 2008 across all models manufactured by Volkswagen. Compute the average of cty and hwy for models manufactured in 1999 and the average for models manufactured in 2008. Do we see a significant difference between the two years?
+
+We calculate the average of cty and hwy for volkawagen models manufactured in 1999 and 2008 using the following code blocks:
+
+```{r Y1999}
+
+mpg_voks_1999 <- mpg%>%
+  filter(manufacturer=="volkswagen" & year=="1999")%>%
+  group_by(model)%>%
+  summarise(avg_cty_1999 = mean(cty), avg_hwy_1999 = mean(hwy))
+mpg_voks_1999
+```
+
+```{r Y2008}
+
+mpg_voks_2008 <- mpg%>%
+  filter(manufacturer=="volkswagen" & year=="2008")%>%
+  group_by(model)%>%
+  summarise(avg_cty_2008 = mean(cty), avg_hwy_2008 = mean(hwy))
+mpg_voks_2008
+```
+
+Based on the above two results, we can say that for the following models
+
+gti: cty and hwy has increased from 1999 to 2008 <br />
+jetta: cty has remained the same whereas hwy has decreased from 1999 to 2008 <br />
+new beetle: cty and hwy has decreased from 1999 to 2008 <br />
+passat: cty and hwy has increased from 1999 to 2008 <br />
+
+volkswagen must probably look more into the performances of the new beetle.
+
+#### Question 6: Using the ggplot2 package create side-by-side boxplots of cty by class. Describe the relationship in 2-3 sentences. Change the label for the y-axis to ‘city miles per gallon’ (see ?ylab).Change the order of the categories in the class variable such that the boxplots are ordered from least efficient to most efficient as measured by cty.
+
+
+```{r bplot1}
+
+ggplot(data = mpg, mapping = aes(x=class, y=cty)) + geom_boxplot() +
+  ylab("city miles per gallon")
+```
+
+Based on the above boxplots, we can see that median city miles travelled per gallon is the maximum for "compact" and minimum for "pickup". By looking at the inter quartile range, the spread is the largest for the "subcompact" and smallest for "2seater". There seems to be a couple of outliers for "compact","SUV", "minivan" and "subcompact". I suspect that the outliers in the class "compact"" are responsible for the median being highest as compared to the other classes. However, looking at the boxplots in this way is a bit difficult and it would be more easily readable to the eyes if the box plots are arranged in the increasing order of the medians of city miles per gallon. <br />
+
+This can be done by incorporating the "reorder" in the aesthetics as used in the following code:
+
+```{r bplot2}
+
+ggplot(data = mpg, mapping = aes(x=reorder(class,cty,median,rm.na=TRUE), y=cty)) + geom_boxplot() +
+  labs(x="class", y="city miles per gallon")
+```
+
+Now, it is easier to compare classes using boxplots. Although, we can make it even better by flipping the x-axis and y-axis using coord_flip() as shown below:
+
+```{r bplot3}
+
+ggplot(data = mpg, mapping = aes(x=reorder(class,cty,median,rm.na=TRUE), y=cty)) + geom_boxplot() +
+  labs(x="class", y="city miles per gallon") + coord_flip()
+```
+
+The boxplots are more appealing to the eye now and are easily comparable.

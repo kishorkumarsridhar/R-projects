@@ -1,0 +1,118 @@
+---
+title: "STAT_528XW_HW3"
+author: "Kishor Kumar Sridhar"
+date: "November 1, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### World Health Organization: Monthly Incidences of Measles
+
+1. For this exercise we will use data reported to and published by the [World Health Organization](https://www.who.int/immunization/monitoring_surveillance/burden/vpd/surveillance_type/active/measles_monthlydata/en/) as part of the Measles and Rubella Surveillance Data. 
+
+a. Each row in the dataset `measles` consists of the number of reported cases of measles by month.
+Use `gather` to bring the data into long form. Make sure to convert the variable for measles incidences to a numeric variable, bring the levels of the variable of month into the right order.
+
+```{r}
+
+if(!require(ggplot2)) install.packages("ggplot2",repos = "http://cran.us.r-project.org")
+library(ggplot2)
+if(!require(dplyr)) install.packages("dplyr",repos = "http://cran.us.r-project.org")
+library(dplyr)
+if(!require(tidyr)) install.packages("tidyr",repos = "http://cran.us.r-project.org")
+library(tidyr)
+if(!require(lubridate)) install.packages("lubridate",repos = "http://cran.us.r-project.org")
+library(lubridate)
+if(!require(readxl)) install.packages("readxl",repos = "http://cran.us.r-project.org")
+library(readxl)
+if(!require(maps)) install.packages("maps",repos = "http://cran.us.r-project.org")
+library(maps)
+
+
+measles <- read_xls("measlescasesbycountrybymonth.xls", sheet=2)
+
+measles_new <- measles%>%
+  gather("month","incidences",January:December)
+
+measles_new$incidences <- as.numeric(measles_new$incidences)
+measles_new$month <- as.factor(measles_new$month)
+
+measles_new%>%head(10)
+
+```
+
+b. With this data, answer the following questions:
+
+How many cases of measles were reported in the United States in 2014?
+
+```{r}
+
+Q1_b_1 <- measles_new%>%
+  group_by(Country, Year)%>%
+  summarise(Count_of_incidences = sum(incidences, na.rm = TRUE))%>%
+  filter(Year == 2014 & Country == "United States of America")
+Q1_b_1
+
+```
+
+From the above result, it can be seen that 668 cases of measles were reported in the United States in 2014.
+
+Which month saw the maximum number of flu cases in 2019 in the United States?
+
+```{r}
+Q1_b_2 <- measles_new%>%
+  filter(Year == 2019 & Country == "United States of America")%>%
+  group_by(month)%>%
+  summarise(Count_of_incidences = sum(incidences, na.rm = TRUE))%>%
+  arrange(desc(Count_of_incidences))%>%
+  head(1)
+Q1_b_2
+
+```
+
+From the above result, it can be seen that the maximum number of flu cases in 2019 in the United States was in April with 317 cases.
+
+c. Use the lubridate package to create a Date variable from the variables Month and Year. You can assume that cases were reported on the 15th of every month.
+
+```{r}
+measles_new <- measles_new%>%
+  mutate(Day = "15")
+
+measles_new <- measles_new%>%
+  mutate(Date = mdy(paste(month,"/",Day,"/",Year)))
+
+measles_new%>%head()
+
+```
+
+Use `ggplot2` to plot the number of reported measles cases for Brazil, Canada and the United States  (use "BRA", "CAN", "USA" for `ISO3`). 
+<br>
+Describe the resulting plot in  2-3 sentences. 
+
+
+
+```{r}
+Q1_d <- measles_new%>%
+  filter(ISO3 %in% c("BRA", "CAN", "USA"))%>%
+  ggplot(aes(x=month, y= incidences, color = ISO3)) +geom_point() + facet_wrap(~Year) + coord_flip()
+Q1_d
+
+```
+
+From the above graph, we can see that in the years 2011,2012,2013,2015,2016,2017 there were barely any cases of measles in Brazil. However, in 2018 and 2019, there were relatively large number of measles cases in Brazil compared to Canada and USA. In USA, the number of cases of measles is low but it looks like measles cases were reported on almost all the months in the given years. This doesn't seem to be the case with Canada because, there are a few months in which there were no incidences of measles reported in Canada.
+
+Question d
+
+
+```{r}
+
+
+countries <- map_data("world")
+countries%>%head()
+
+```
+
+
